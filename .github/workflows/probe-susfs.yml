@@ -1,0 +1,19 @@
+name: Probe susfs
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone susfs and locate API
+        run: |
+          set -x
+          git clone -q https://gitlab.com/simonpunk/susfs4ksu.git s || exit 1
+          cd s
+          echo "=== HEAD ==="; git log -1 --format='%H %ci %s'
+          echo "=== branches ==="; git branch -r | head -20
+          echo "=== has symbol at HEAD? ==="; grep -rn "susfs_set_current_proc_no_su" --include=*.h --include=*.c . | head -5
+          echo "=== introducing commit on gki-android12-5.10 ==="
+          git log --oneline -S"susfs_set_current_proc_no_su" --all -- kernel_patches 2>/dev/null | tail -10
+          echo "=== version tags/branch tips ==="
+          for b in $(git branch -r | grep -E "gki-android12-5.10|gki-android13" | head -5); do echo "$b $(git rev-parse $b) $(git log -1 --format=%ci $b)"; done
