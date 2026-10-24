@@ -86,6 +86,24 @@ jobs:
             exit 1
           fi
 
+      # --- FIX 4: trust a locally built (debug-signed) manager APK -----------
+      # ksu_install_fd() only hands the driver fd to UIDs registered as manager,
+      # and throne_tracker only registers an APK whose v2 certificate is listed in
+      # apk_sign_keys[] (manager_sign.h ships the official release keys only).
+      # A self-built manager is debug-signed, so it never gets the fd and the app
+      # reports "KernelSU driver not detected".
+      # Append our debug certificate (DER length + SHA-256) to the allowlist.
+      - name: Trust local manager signature
+        run: |
+          f=KernelSU/kernel/manager/apk_sign.c
+          grep -q '^static apk_sign_key_t apk_sign_keys\[\] = {' "$f" \
+            || { echo "::error::apk_sign_keys[] anchor not found in $f"; exit 1; }
+          sed -i 's|^static apk_sign_key_t apk_sign_keys\[\] = {|&\n    { 0x2e8, "da7c39194b6b361671cd94cfa643451392134d7093330a348828ff0965769623" }, // locally built debug-signed manager|' "$f"
+          sed -n '/apk_sign_key_t apk_sign_keys\[\] = {/,/^};/p' "$f"
+          grep -q 'da7c39194b6b361671cd94cfa643451392134d7093330a348828ff0965769623' "$f" \
+            || { echo "::error::signature injection failed"; exit 1; }
+          echo "local manager signature trusted"
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
