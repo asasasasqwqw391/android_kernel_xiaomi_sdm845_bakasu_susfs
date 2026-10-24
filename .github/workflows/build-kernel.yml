@@ -93,16 +93,19 @@ jobs:
       # A self-built manager is signed with a key the kernel does not know, so it
       # never gets the fd and the app reports "KernelSU driver not detected".
       # Append our own signing certificate (DER length + SHA-256) to the list.
-      # NOTE: do NOT use the Android debug key here -- every debug-signed APK on
-      # the device would be crowned as a manager and gain the root fd.
+      # NOTE 1: do NOT use the Android debug key here -- every debug-signed APK on
+      #         the device would be crowned as a manager and gain the root fd.
+      # NOTE 2: the DER certificate must be <= CERT_MAX_LENGTH (1024 bytes) in
+      #         apk_sign.c. A 4096-bit RSA cert is ~1312 bytes and is silently
+      #         rejected, so keep the signing key at 2048 bits (800 bytes).
       - name: Trust local manager signature
         run: |
           f=KernelSU/kernel/manager/apk_sign.c
           grep -q '^static apk_sign_key_t apk_sign_keys\[\] = {' "$f" \
             || { echo "::error::apk_sign_keys[] anchor not found in $f"; exit 1; }
-          sed -i 's|^static apk_sign_key_t apk_sign_keys\[\] = {|&\n    { 0x520, "79de0849fe7d3c4218c81b82ad4725bb877786da1ededf3672e73f4d2299ffd9" }, // bakasu-local signing key|' "$f"
+          sed -i 's|^static apk_sign_key_t apk_sign_keys\[\] = {|&\n    { 0x320, "0dbd23c2f162ebdbea8dfab53d2837f9806dbe874d9b9d499680ef02054433c9" }, // bakasu-local signing key|' "$f"
           sed -n '/apk_sign_key_t apk_sign_keys\[\] = {/,/^};/p' "$f"
-          grep -q '79de0849fe7d3c4218c81b82ad4725bb877786da1ededf3672e73f4d2299ffd9' "$f" \
+          grep -q '0dbd23c2f162ebdbea8dfab53d2837f9806dbe874d9b9d499680ef02054433c9' "$f" \
             || { echo "::error::signature injection failed"; exit 1; }
           echo "local manager signature trusted"
 
