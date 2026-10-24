@@ -66,6 +66,26 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      # --- FIX 1: KSU_VERSION = 30000 + (KernelSU commit count) + 700 ---
+      # actions/checkout clones submodules with depth 1, so the count is 1 and the
+      # kernel reports KSU_VERSION 30701 instead of the real 34795, which makes every
+      # 4.x manager report "kernel needs update". Unshallow KernelSU here.
+      - name: Unshallow KernelSU submodule
+        run: |
+          cd KernelSU
+          gitdir="$(git rev-parse --git-dir)"
+          if [ -f "$gitdir/shallow" ]; then
+            echo "KernelSU submodule is shallow, fetching full history..."
+            git fetch --unshallow --tags || git fetch --depth=6000 --tags
+          fi
+          cnt="$(git rev-list --count HEAD)"
+          echo "KernelSU commit count: $cnt"
+          echo "expected KSU_VERSION: $((30000 + cnt + 700))"
+          if [ "$cnt" -lt 4000 ]; then
+            echo "::error::KernelSU history still shallow (count=$cnt) - refusing to build a mislabeled kernel"
+            exit 1
+          fi
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
@@ -138,6 +158,16 @@ jobs:
           cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
           cd AnyKernel3
           sed -i "s/^device\.name1=.*/device.name1=${{ matrix.device }}/" anykernel.sh
+          # --- FIX 2: the AnyKernel3 submodule is the Galaxy Nexus (tuna) template.
+          # BLOCK points at an omap path that does not exist on SDM845, and the
+          # init.tuna.rc / fstab.tuna patch block is dead code here. Without this
+          # the produced zip installs nothing (or aborts) on polaris & co.
+          sed -i "s/^device\.name2=.*/device.name2=/; s/^device\.name3=.*/device.name3=/; s/^device\.name4=.*/device.name4=/" anykernel.sh
+          sed -i "s#^BLOCK=.*#BLOCK=/dev/block/bootdevice/by-name/boot;#" anykernel.sh
+          sed -i "s/^kernel\.string=.*/kernel.string=BakaSU Kernel for ${{ matrix.device }} (LineageOS 22.2)/" anykernel.sh
+          awk '/^dump_boot/{print; skip=1; next} /^write_boot/{skip=0} !skip{print}' anykernel.sh > anykernel.sh.new && mv anykernel.sh.new anykernel.sh
+          grep -nE "^(BLOCK=|device\.name1=|kernel\.string=)" anykernel.sh
+          grep -c "fstab.tuna" anykernel.sh || echo "tuna patch block removed"
           NAME="DroidSpaces-${{ matrix.device }}-lineage22.2-$(date +%Y%m%d).zip"
           zip -r9 "$NAME" * -x '.git*' '.github/*' README.md '*.zip' >/dev/null
           echo "ZIP_NAME=$NAME" >> "$GITHUB_ENV"
