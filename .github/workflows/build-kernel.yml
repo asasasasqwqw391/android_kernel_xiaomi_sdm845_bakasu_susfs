@@ -86,6 +86,23 @@ jobs:
             exit 1
           fi
 
+      # --- FIX 3: the kernel tree vendors its own fs/susfs.c + headers (2.2.0).
+      # KernelSU 8770c7e3 calls the newer susfs no_su APIs, so sync the vendored
+      # susfs files from the (bumped) submodule before compiling.
+      - name: Sync vendored susfs from submodule
+        run: |
+          S=susfs4ksu
+          ls "$S" || true
+          for p in fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h; do
+            if [ -f "$S/kernel_patches/$p" ]; then
+              echo "syncing $p"
+              cp "$S/kernel_patches/$p" "$p"
+            else
+              echo "::warning::missing $S/kernel_patches/$p"
+            fi
+          done
+          grep -c "susfs_set_current_proc_no_su" include/linux/susfs_def.h || true
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
