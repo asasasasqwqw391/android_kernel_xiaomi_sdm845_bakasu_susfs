@@ -86,21 +86,23 @@ jobs:
             exit 1
           fi
 
-      # --- FIX 4: trust a locally built (debug-signed) manager APK -----------
+      # --- FIX 4: trust the locally built manager APK -------------------------
       # ksu_install_fd() only hands the driver fd to UIDs registered as manager,
       # and throne_tracker only registers an APK whose v2 certificate is listed in
       # apk_sign_keys[] (manager_sign.h ships the official release keys only).
-      # A self-built manager is debug-signed, so it never gets the fd and the app
-      # reports "KernelSU driver not detected".
-      # Append our debug certificate (DER length + SHA-256) to the allowlist.
+      # A self-built manager is signed with a key the kernel does not know, so it
+      # never gets the fd and the app reports "KernelSU driver not detected".
+      # Append our own signing certificate (DER length + SHA-256) to the list.
+      # NOTE: do NOT use the Android debug key here -- every debug-signed APK on
+      # the device would be crowned as a manager and gain the root fd.
       - name: Trust local manager signature
         run: |
           f=KernelSU/kernel/manager/apk_sign.c
           grep -q '^static apk_sign_key_t apk_sign_keys\[\] = {' "$f" \
             || { echo "::error::apk_sign_keys[] anchor not found in $f"; exit 1; }
-          sed -i 's|^static apk_sign_key_t apk_sign_keys\[\] = {|&\n    { 0x2e8, "da7c39194b6b361671cd94cfa643451392134d7093330a348828ff0965769623" }, // locally built debug-signed manager|' "$f"
+          sed -i 's|^static apk_sign_key_t apk_sign_keys\[\] = {|&\n    { 0x520, "79de0849fe7d3c4218c81b82ad4725bb877786da1ededf3672e73f4d2299ffd9" }, // bakasu-local signing key|' "$f"
           sed -n '/apk_sign_key_t apk_sign_keys\[\] = {/,/^};/p' "$f"
-          grep -q 'da7c39194b6b361671cd94cfa643451392134d7093330a348828ff0965769623' "$f" \
+          grep -q '79de0849fe7d3c4218c81b82ad4725bb877786da1ededf3672e73f4d2299ffd9' "$f" \
             || { echo "::error::signature injection failed"; exit 1; }
           echo "local manager signature trusted"
 
