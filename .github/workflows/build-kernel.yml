@@ -109,6 +109,19 @@ jobs:
             || { echo "::error::signature injection failed"; exit 1; }
           echo "local manager signature trusted"
 
+      # --- FIX 5: allowlist persistence + init cred leak ---------------------
+      # do_persistent_allow_list() runs on the init task. It returned without
+      # revert_creds() when filp_open() failed, leaving init with
+      # cred != real_cred -- the next commit_creds() then trips
+      # BUG_ON(task->cred != old) in kernel/cred.c and panics the device
+      # (spawning wpa_supplicant by turning wifi/hotspot on is a reliable
+      # trigger). The open itself failed with -ENOKEY, so the allowlist was
+      # never written and every root grant was lost on reboot.
+      - name: Fix allowlist persistence and init cred leak
+        run: |
+          python3 .github/scripts/fix-allowlist.py KernelSU/kernel/policy/allowlist.c
+          sed -n '/void do_persistent_allow_list/,/^}/p' KernelSU/kernel/policy/allowlist.c | head -40
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
